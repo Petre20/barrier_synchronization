@@ -1,30 +1,31 @@
-# Process Barrier Synchronization
+# Process & Thread Barrier Synchronization
 
-Implementare a unei bariere de sincronizare pentru procese în C, folosind memorie partajată și semafoare POSIX. Bariera garantează că toate procesele termină o fază de execuție înainte ca oricare dintre ele să treacă la faza următoare.
+Implementare a unei bariere de sincronizare în C în două variante — bazată pe **procese** cu memorie partajată și semafoare POSIX, și bazată pe **thread-uri** cu `pthread_barrier_t`. Bariera garantează că toate unitățile de execuție termină o fază înainte ca oricare dintre ele să treacă la faza următoare.
 
 ---
 
 ## Cuprins
 
 - [Descriere](#descriere)
-- [Arhitectură](#arhitectură)
-- [Mecanismul barierei](#mecanismul-barierei)
-- [Structuri de date](#structuri-de-date)
+- [Varianta cu procese](#varianta-cu-procese)
+- [Varianta cu thread-uri](#varianta-cu-thread-uri)
+- [Comparație](#comparație)
 - [Compilare](#compilare)
 - [Utilizare](#utilizare)
-- [Exemplu de rulare](#exemplu-de-rulare)
+- [Exemple de rulare](#exemple-de-rulare)
+- [Resurse](#resurse)
 
 ---
 
 ## Descriere
 
-Programul creează `N` procese copil prin `fork`, fiecare executând `M` faze de lucru. La sfârșitul fiecărei faze, procesele se sincronizează la o barieră — niciun proces nu poate trece la faza `i+1` până când toate procesele nu au terminat faza `i`.
-
-Implementarea folosește un **turnstile dublu** (două semafoare) pentru a preveni race condition-ul în care un proces rapid ar putea consuma tokenul destinat unui proces lent din faza anterioară, cauzând deadlock.
+Ambele variante creează `N` unități de execuție care parcurg `M` faze de lucru simulate. La sfârșitul fiecărei faze, unitățile se sincronizează la o barieră — niciun participant nu poate trece la faza `i+1` până când toți nu au terminat faza `i`.
 
 ---
 
-## Arhitectură
+## Varianta cu procese
+
+### Arhitectură
 
 ```
 main
@@ -35,19 +36,15 @@ main
  └── wait() x N                 # parintele asteapta toti copiii
 ```
 
----
+### Mecanismul barierei — Turnstile dublu
 
-## Mecanismul barierei
+Bariera folosește două semafoare pentru a preveni race condition-ul în care un proces rapid ar putea consuma tokenul destinat unui proces lent din faza anterioară, cauzând deadlock.
 
-Bariera folosește două semafoare pentru sincronizare, formând un turnstile dublu:
+**De ce un singur semafor nu este suficient:**
 
-**Faza de intrare (`entry_sem`):**
-Fiecare proces incrementează `arrived` și se blochează la `entry_sem`. Când ultimul proces ajunge (`arrived == total`), deschide `entry_sem` pentru toate procesele simultan.
+Cu un singur semafor, după ce ultimul proces postează `N` tokeni, semaforul nu știe pentru ce fază sunt destinați. Un proces rapid poate consuma propriul token, executa faza `i+1` și consuma un token destinat altui proces din faza `i`, lăsând acel proces blocat pentru totdeauna.
 
-**Faza de ieșire (`exit_sem`):**
-Fiecare proces care a trecut de `entry_sem` incrementează `departed` și se blochează la `exit_sem`. Când ultimul proces ajunge (`departed == total`), deschide `exit_sem` pentru toate procesele simultan.
-
-Această abordare garantează că niciun proces nu poate intra în faza `i+1` înainte ca toate procesele să fi finalizat complet faza `i`, eliminând posibilitatea de deadlock prezentă într-o implementare cu un singur semafor.
+**Soluția — două semafoare:**
 
 ```
 Proces 0  ──┐
@@ -58,11 +55,14 @@ Proces 2  ──┘
           ajuns             trecut
 ```
 
----
+**Faza de intrare (`entry_sem`):** fiecare proces incrementează `arrived` și se blochează. Când ultimul ajunge (`arrived == total`), deschide `entry_sem` pentru toți simultan.
 
-## Structuri de date
+**Faza de ieșire (`exit_sem`):** fiecare proces care a trecut de `entry_sem` incrementează `departed` și se blochează. Când ultimul ajunge (`departed == total`), deschide `exit_sem` pentru toți simultan.
 
-### `Barrier`
+Niciun proces nu poate intra în faza `i+1` înainte ca toți să fi trecut ambele puncte de control.
+
+### Structuri de date
+
 ```c
 typedef struct {
     sem_t mutex;      // protejeaza arrived si departed
@@ -72,10 +72,7 @@ typedef struct {
     int departed;     // procese intrate care asteapta sa iasa
     int total;        // numarul total de procese
 } Barrier;
-```
 
-### `Shared`
-```c
 typedef struct {
     Barrier barrier;  // bariera de sincronizare
     int nr_processes; // numarul de procese
@@ -83,41 +80,125 @@ typedef struct {
 } Shared;
 ```
 
+### Apeluri de sistem folosite
+
+| Apel | Rol |
+|------|-----|
+| `fork` | Crearea proceselor copil |
+| `wait` | Așteptarea terminării copiilor |
+| `shmget` | Crearea segmentului de memorie partajată |
+| `shmat` | Atașarea segmentului |
+| `shmctl` | Marcare pentru ștergere automată |
+| `shmdt` | Detașarea segmentului |
+| `clock_gettime` | Măsurarea timpului de așteptare |
+| `getpid` | Seed unic pentru generarea aleatoare |
+| `sleep` | Simularea muncii |
+
+### Intervalul de timp de lucru
+
+Timpul de lucru per proces per fază este calculat ca `id % 10 + rand() % 5 + 1`, rezultând o plajă de **1 până la 14 secunde**.
+
+---
+
+## Varianta cu thread-uri
+
+### Arhitectură
+
+```
+main
+ ├── pthread_barrier_init()     # initializare bariera POSIX
+ ├── spawn_threads() x N        # creeaza N thread-uri
+ │    └── thread_work()         # fiecare thread executa M faze
+ │         ├── simulate_work()  # simuleaza munca cu nanosleep
+ │         └── wait_at_barrier() # sincronizare la sfarsitul fazei
+ └── join_threads()             # asteapta toate thread-urile
+      └── cleanup()             # distruge bariera si elibereaza memoria
+```
+
+### Mecanismul barierei — `pthread_barrier_t`
+
+Varianta cu thread-uri folosește bariera nativă POSIX `pthread_barrier_t`, implementată direct în kernel, fără a fi nevoie de o implementare manuală cu semafoare.
+
+`pthread_barrier_wait` blochează thread-ul apelant până când toate `N` thread-urile au apelat funcția. Un singur thread primește `PTHREAD_BARRIER_SERIAL_THREAD` ca valoare de retur — acesta este folosit pentru a afișa mesajul global de deschidere a barierei.
+
+```c
+int ret = pthread_barrier_wait(&barrier);
+if (ret == PTHREAD_BARRIER_SERIAL_THREAD) {
+    printf("\nBARIERA DESCHISA pentru Faza %d.\n", phase);
+}
+```
+
+### Structuri de date
+
+```c
+pthread_barrier_t barrier;  // bariera globala POSIX
+
+typedef struct {
+    int id;
+    int num_phases;
+} ThreadArg;               // argumente trimise fiecarui thread
+```
+
+### Intervalul de timp de lucru
+
+Timpul de lucru per thread per fază este `rand_r(&seed) % 4500 + 500`, rezultând o plajă de **500 până la 5000 milisecunde**. Fiecare thread folosește un seed unic (`time(NULL) + id`) prin `rand_r` — funcție thread-safe față de `rand`.
+
+---
+
+## Comparație
+
+| Criteriu | Procese | Thread-uri |
+|----------|---------|------------|
+| Unitate de execuție | Proces (`fork`) | Thread (`pthread_create`) |
+| Memorie | Separată, partajată explicit prin `shmget` | Partajată implicit |
+| Barieră | Implementată manual cu 2 semafoare | `pthread_barrier_t` nativ |
+| Comunicare | Memorie partajată (`Shared`) | Variabile globale / argumente |
+| Overhead | Mai mare (procese separate) | Mai mic (același spațiu de adrese) |
+| Izolare | Mai puternică (crash izolat per proces) | Mai slabă (un thread poate afecta toți) |
+| Timp simulat | Secunde (`sleep`) | Milisecunde (`nanosleep`) |
+| Corectitudine barieră | Garantată prin turnstile dublu | Garantată de implementarea kernel |
+
 ---
 
 ## Compilare
 
+**Varianta cu procese:**
 ```bash
-gcc -Wall -Wextra -o barrier barrier.c -lpthread
+gcc -Wall -Wextra -o barrier_proc barrier_proc.c -lpthread
 ```
 
-| Flag | Descriere |
-|------|-----------|
-| `-Wall` | Activează avertismentele comune |
-| `-Wextra` | Activează avertismente suplimentare |
-| `-lpthread` | Leagă biblioteca POSIX pentru semafoare |
+**Varianta cu thread-uri:**
+```bash
+gcc -Wall -Wextra -o barrier_thread barrier_thread.c -lpthread
+```
 
 ---
 
 ## Utilizare
 
+**Varianta cu procese:**
 ```bash
-./barrier <nr_procese> <nr_faze>
+./barrier_proc <nr_procese> <nr_faze>
 ```
 
-| Parametru | Descriere | Interval |
-|-----------|-----------|----------|
-| `nr_procese` | Numărul de procese create | 2 — 20 |
-| `nr_faze` | Numărul de faze de execuție | 1 — 20 |
+**Varianta cu thread-uri:**
+```bash
+./barrier_thread <nr_threaduri> <nr_faze>
+```
+
+| Parametru | Descriere | Procese | Thread-uri |
+|-----------|-----------|---------|------------|
+| `nr_procese` / `nr_threaduri` | Numărul de unități de execuție | 2 — 20 | > 0 |
+| `nr_faze` | Numărul de faze de execuție | 1 — 20 | > 0 |
 
 ---
 
-## Exemplu de rulare
+## Exemple de rulare
 
+**Varianta cu procese:**
 ```bash
-./barrier 3 2
+./barrier_proc 3 2
 ```
-
 ```
 Proces 0 Faza 0: lucreaza 1s...
 Proces 1 Faza 0: lucreaza 4s...
@@ -132,19 +213,36 @@ BARIERA - Faza 0: toate procesele au trecut. Deschid iesirea.
 Procesul 0 - Faza 0: a asteptat 6.001 secunde
 Procesul 1 - Faza 0: a asteptat 3.001 secunde
 Procesul 2 - Faza 0: a asteptat 0.000 secunde
-Proces 0 Faza 1: lucreaza 2s...
-Proces 1 Faza 1: lucreaza 5s...
-Proces 2 Faza 1: lucreaza 8s...
-...
 Toate procesele au terminat.
 ```
 
-Timpul de așteptare raportat de fiecare proces reprezintă intervalul de la momentul sosirii la barieră până la primirea tokenului de ieșire — procesul care ajunge primul așteaptă cel mai mult, cel care ajunge ultimul trece aproape instant.
+**Varianta cu thread-uri:**
+```bash
+./barrier_thread 3 2
+```
+```
+INCEPUT SIMULARE: 3 Thread-uri si 2 Faze
+
+[Thread 0] Faza 1: A inceput executia... (1243 ms)
+[Thread 1] Faza 1: A inceput executia... (3512 ms)
+[Thread 2] Faza 1: A inceput executia... (4891 ms)
+Thread 0 Faza 1: A terminat executia. Asteapta la bariera.
+Thread 1 Faza 1: A terminat executia. Asteapta la bariera.
+Thread 2 Faza 1: A terminat executia. Asteapta la bariera.
+
+BARIERA DESCHISA pentru Faza 1. Trecem la urmatoarea.
+
+Thread 0 Faza 1: A trecut bariera. Timp asteptat: 3648.21 ms
+Thread 1 Faza 1: A trecut bariera. Timp asteptat: 1379.05 ms
+Thread 2 Faza 1: A trecut bariera. Timp asteptat: 0.12 ms
+SIMULARE FINALIZATA
+```
 
 ---
 
 ## Resurse
 
 - [POSIX Semaphores — man sem_init](https://man7.org/linux/man-pages/man3/sem_init.3.html)
+- [pthread_barrier_wait — man page](https://man7.org/linux/man-pages/man3/pthread_barrier_wait.3p.html)
 - [Shared Memory — man shmget](https://man7.org/linux/man-pages/man2/shmget.2.html)
 - [The Little Book of Semaphores — Allen B. Downey](https://greenteapress.com/wp/semaphores/)
