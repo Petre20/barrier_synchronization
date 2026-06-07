@@ -300,7 +300,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    printf("  Ridicare la putere cu bariera de sincronizare (inmultire liniara)\n");
+    printf("  Ridicare la putere cu bariera de sincronizare\n");
     printf("  Matrice: %dx%d\n", N, N);
     printf("  Putere: A^%d\n", nr_faze);
     printf("  Procese: %d\n\n", nr_procese);
