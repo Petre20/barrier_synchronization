@@ -177,13 +177,13 @@ int main(int argc, char* argv[]) {
     boost::barrier bar(num_threads);
 
     SharedData sd;
-    sd.n           = n;
+    sd.n = n;
     sd.num_threads = num_threads;
-    sd.power       = power;
-    sd.original    = &M;
-    sd.current     = &current;
-    sd.result      = &result;
-    sd.bar         = &bar;
+    sd.power = power;
+    sd.original = &M;
+    sd.current = &current;
+    sd.result = &result;
+    sd.bar = &bar;
 
     auto t_start = chrono::steady_clock::now();
 
