@@ -54,27 +54,26 @@ struct SharedData {
     int power;       // puterea la care ridicam
 
     const Matrix* original;  // M (matricea initiala, doar citire)
-    Matrix*       current;   // M^k (rezultatul pasului curent)
-    Matrix*       result;    // buffer pentru M^(k+1)
+    Matrix* current;   // M^k (rezultatul pasului curent)
+    Matrix* result;    // buffer pentru M^(k+1)
 
     boost::barrier* bar;
-    boost::mutex    cout_mtx;
+    boost::mutex cout_mtx;
 };
 
 // Functia executata de fiecare thread
 void thread_func(SharedData* sd, int tid) {
-    int n           = sd->n;
+    int n = sd->n;
     int num_threads = sd->num_threads;
 
     // Partitionare linii: thread-ul tid se ocupa de [row_start, row_end)
-    int chunk     = (n + num_threads - 1) / num_threads;
+    int chunk = (n + num_threads - 1) / num_threads;
     int row_start = tid * chunk;
-    int row_end   = min(row_start + chunk, n);
+    int row_end = min(row_start + chunk, n);
 
     {
         boost::mutex::scoped_lock lk(sd->cout_mtx);
-        cout << "[Thread " << tid << "] Linii responsabile: ["
-             << row_start << ", " << row_end - 1 << "]\n";
+        cout << "[Thread " << tid << "] Linii responsabile: [" << row_start << ", " << row_end - 1 << "]\n";
     }
 
     // p-1 pasi: la fiecare pas calculam result = current * original
