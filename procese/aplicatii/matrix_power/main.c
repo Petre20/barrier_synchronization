@@ -54,10 +54,10 @@ void swap_and_reset(long long *current, long long *result, int N)
 }
 
 /*
-Asteptarea la bariera.
+Asteptarea la bariera
 Ultimul proces care ajunge face swap-ul inainte sa elibereze ceilalti,
 in acel moment toti sunt blocati la entry_sem, deci nimeni nu mai citeste
-din current sau result, swap-ul e safe fara o a doua bariera.
+din current sau result.
 */
 void barrier_wait(Barrier *b, int phase, long long *current, long long *result, int N)
 {
@@ -206,7 +206,7 @@ void worker(int id, Shared *hdr)
             printf(" %d", i);
         printf("\n");
 
-        // Lucrul efectiv: result = current * A_orig (inmultire liniara cu A original)
+        // Lucrul efectiv: result = current * A_orig 
         multiply_rows(current, A_orig, result, N, id, nr_procese);
 
         printf("  Proces %d | Faza %d: terminat\n", id, faza + 1);
@@ -256,7 +256,7 @@ int check(long long *parallel, long long *normal, int N)
         for (int j = 0; j < N; j++)
             if (MAT(parallel, N, i, j) != MAT(normal, N, i, j))
             {
-                printf("  Eroare la (%d,%d): paralel=%lld normal=%lld\n",
+                printf("Eroare la (%d,%d): paralel=%lld normal=%lld\n",
                        i, j,
                        MAT(parallel, N, i, j),
                        MAT(normal, N, i, j));
@@ -300,10 +300,22 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+ 
+
     printf("  Ridicare la putere cu bariera de sincronizare\n");
     printf("  Matrice: %dx%d\n", N, N);
     printf("  Putere: A^%d\n", nr_faze);
     printf("  Procese: %d\n\n", nr_procese);
+
+
+
+       if (nr_procese > N)
+{
+    printf("Numarul de procese (%d) este mai mare decat N (%d)."
+           " Se vor folosi doar %d procese.\n", nr_procese, N, N);
+    nr_procese = N; 
+}
+
 
     // Crearea segmentului de memorie partajata — avem nevoie de 3 matrici:
     // A_orig (read-only), current (acumulator), result (scratch)

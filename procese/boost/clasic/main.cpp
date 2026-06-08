@@ -96,10 +96,6 @@ void worker(int id, Shared *shm)
 }
 
 // Clasa RAII pentru shared memory
-// In varianta POSIX faceai manual: shmget -> shmat -> shmctl(IPC_RMID)
-// Aici constructorul creeaza + mapeaza, destructorul curata automat
-// chiar daca procesul crapa (spre deosebire de IPC_PRIVATE din POSIX
-// care necesita detasare explicita)
 struct SharedMemory
 {
     bip::shared_memory_object shm_obj;
@@ -107,13 +103,12 @@ struct SharedMemory
     Shared *ptr;
 
     SharedMemory(int nr_processes, int nr_phases)
-        : shm_obj(bip::create_only, SHM_NAME, bip::read_write)
+        : shm_obj(bip::create_only, SHM_NAME, bip::read_write) // incearca sa creeze un segment nou de memorie numit boost_barrier_shm
     {
-        shm_obj.truncate(sizeof(Shared));
-        region = bip::mapped_region(shm_obj, bip::read_write);
+        shm_obj.truncate(sizeof(Shared)); // pentru alocare folosim dimensiunea lui Shared 
+        region = bip::mapped_region(shm_obj, bip::read_write); // ia segmentul global si il pune in spatiul de adrese virtuale al procesului parinte
 
         // placement new - construim Shared in memoria deja alocata
-        // fara asta semafoarele Boost nu ar fi initializate corect
         ptr = new (region.get_address()) Shared();
 
         ptr->nr_processes = nr_processes;
